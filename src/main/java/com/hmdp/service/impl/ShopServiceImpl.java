@@ -1,6 +1,7 @@
 package com.hmdp.service.impl;
 
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.dto.Result;
@@ -8,7 +9,9 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.hmdp.utils.CacheClient;
+import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.SystemConstants;
+import jodd.util.StringUtil;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResult;
 import org.springframework.data.geo.GeoResults;
@@ -44,23 +47,42 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Override
     public Result queryById(Long id) {
-        // 解决缓存穿透
-        Shop shop = cacheClient
-                .queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
-
-        // 互斥锁解决缓存击穿
-        // Shop shop = cacheClient
-        //         .queryWithMutex(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
-
-        // 逻辑过期解决缓存击穿
-        // Shop shop = cacheClient
-        //         .queryWithLogicalExpire(CACHE_SHOP_KEY, id, Shop.class, this::getById, 20L, TimeUnit.SECONDS);
-
-        if (shop == null) {
-            return Result.fail("店铺不存在！");
+        String key = CACHE_SHOP_KEY + id;
+        // 1.从redis查询商品缓存
+        String shopJson = stringRedisTemplate.opsForValue().get(key);
+        // 2.判断是否存在
+        if (StringUtil.isNotBlank(shopJson)) {
+            // 3.存在直接返回
+            Shop shop = JSONUtil.toBean(shopJson, Shop.class);
+            return Result.ok(shop);
         }
-        // 7.返回
+        // 4.不存在，根据id查询数据库
+        Shop shop = getById(id);
+        // 5. 不存在，返回错误
+        if (shop == null) {
+            return Result.fail("店铺不存在");
+        }
+        // 6. 存在，写入redis
+        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(shop));
         return Result.ok(shop);
+
+//        // 解决缓存穿透
+//        Shop shop = cacheClient
+//                .queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+//
+//        // 互斥锁解决缓存击穿
+//        // Shop shop = cacheClient
+//        //         .queryWithMutex(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+//
+//        // 逻辑过期解决缓存击穿
+//        // Shop shop = cacheClient
+//        //         .queryWithLogicalExpire(CACHE_SHOP_KEY, id, Shop.class, this::getById, 20L, TimeUnit.SECONDS);
+//
+//        if (shop == null) {
+//            return Result.fail("店铺不存在！");
+//        }
+//        // 7.返回
+//        return Result.ok(shop);
     }
 
     @Override
