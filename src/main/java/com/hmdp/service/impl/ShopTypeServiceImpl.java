@@ -35,14 +35,14 @@ public class ShopTypeServiceImpl extends ServiceImpl<ShopTypeMapper, ShopType> i
     public Result queryTypeList() {
         
         // 从redis中获取商铺类型缓存
-        String key = RedisConstants.CACHE_SHOP_KEY + "list";
+        String key = RedisConstants.CACHE_SHOP_KEY + "typeList";
         String jsonShopType = stringRedisTemplate.opsForValue().get(key);
         if (StringUtil.isNotBlank(jsonShopType)) {
-            List<Shop> shops = JSONUtil.toList(jsonShopType, Shop.class);
-            return Result.ok(shops);
+            List<ShopType> shopTypes = JSONUtil.toList(jsonShopType, ShopType.class);
+            return Result.ok(shopTypes);
         }
-        List<ShopType> shops = query().orderByAsc("sort").list();
-        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(shops));
-        return Result.ok(shops);
+        List<ShopType> shopTypes = query().orderByAsc("sort").list();
+        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(shopTypes));
+        return Result.ok(shopTypes);
     }
 }
