@@ -5,6 +5,7 @@ import com.hmdp.service.impl.ShopServiceImpl;
 import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisIdWorker;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.geo.Point;
 import org.springframework.data.redis.connection.RedisGeoCommands;
@@ -39,6 +40,16 @@ class HmDianPingApplicationTests {
     private StringRedisTemplate stringRedisTemplate;
 
     private ExecutorService es = Executors.newFixedThreadPool(500);
+
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
+    @Test
+    public void testSimpleQueue() {
+        String queueName = "simple.queue";
+        String message = "hello";
+        rabbitTemplate.convertAndSend(queueName, message);
+    }
 
     @Test
     void testIdWorker() throws InterruptedException {

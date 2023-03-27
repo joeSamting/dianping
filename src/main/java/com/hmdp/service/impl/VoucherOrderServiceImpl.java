@@ -13,7 +13,10 @@ import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.stream.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -54,7 +57,12 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private RedissonClient redissonClient;
 
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
+
+    private final String QUEUE_NAME = "rabbitmq.orders";
 
     static {
         SECKILL_SCRIPT = new DefaultRedisScript<>();
@@ -62,6 +70,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         SECKILL_SCRIPT.setResultType(Long.class);
     }
 
+    /*
     private static final ExecutorService SECKILL_ORDER_EXECUTOR = Executors.newSingleThreadExecutor();
 
     @PostConstruct
@@ -71,18 +80,17 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     private class VoucherOrderHandler implements Runnable{
-        private final String queueName = "stream.orders";
         @Override
         public void run() {
             while (true) {
                 try {
                     // 0.初始化stream
-                    initStream();
+                    // initStream();
                     // 1.获取消息队列中的订单信息 XREADGROUP GROUP g1 c1 COUNT 1 BLOCK 2000 STREAMS s1 >
                     List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
                             Consumer.from("g1", "c1"),
                             StreamReadOptions.empty().count(1).block(Duration.ofSeconds(2)),
-                            StreamOffset.create(queueName, ReadOffset.lastConsumed())
+                            StreamOffset.create(QUEUE_NAME, ReadOffset.lastConsumed())
                     );
                     // 2.判断订单信息是否为空
                     if (list == null || list.isEmpty()) {
@@ -96,32 +104,31 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     // 3.创建订单
                     handleVoucherOrder(voucherOrder);
                     // 4.确认消息 XACK stream.orders g1 id
-                    stringRedisTemplate.opsForStream().acknowledge(queueName, "g1", record.getId());
+                    stringRedisTemplate.opsForStream().acknowledge(QUEUE_NAME, "g1", record.getId());
                 } catch (Exception e) {
                     log.error("处理订单异常", e);
                     handlePendingList();
                 }
             }
-        }
+        } */
 
-        public void initStream(){
-            Boolean exists = stringRedisTemplate.hasKey(queueName);
+/*        public void initStream(){
+            Boolean exists = stringRedisTemplate.hasKey(QUEUE_NAME);
             if (BooleanUtil.isFalse(exists)) {
                 log.info("stream不存在，开始创建stream");
                 // 不存在，需要创建
-                stringRedisTemplate.opsForStream().createGroup(queueName, ReadOffset.latest(), "g1");
+                stringRedisTemplate.opsForStream().createGroup(QUEUE_NAME, ReadOffset.latest(), "g1");
                 log.info("stream和group创建完毕");
                 return;
             }
             // stream存在，判断group是否存在
-            StreamInfo.XInfoGroups groups = stringRedisTemplate.opsForStream().groups(queueName);
+            StreamInfo.XInfoGroups groups = stringRedisTemplate.opsForStream().groups(QUEUE_NAME);
             if(groups.isEmpty()){
                 log.info("group不存在，开始创建group");
                 // group不存在，创建group
-                stringRedisTemplate.opsForStream().createGroup(queueName, ReadOffset.latest(), "g1");
+                stringRedisTemplate.opsForStream().createGroup(QUEUE_NAME, ReadOffset.latest(), "g1");
                 log.info("group创建完毕");
             }
-        }
 
         private void handlePendingList() {
             while (true) {
@@ -130,7 +137,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     List<MapRecord<String, Object, Object>> list = stringRedisTemplate.opsForStream().read(
                             Consumer.from("g1", "c1"),
                             StreamReadOptions.empty().count(1),
-                            StreamOffset.create(queueName, ReadOffset.from("0"))
+                            StreamOffset.create(QUEUE_NAME, ReadOffset.from("0"))
                     );
                     // 2.判断订单信息是否为空
                     if (list == null || list.isEmpty()) {
@@ -144,11 +151,53 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                     // 3.创建订单
                     handleVoucherOrder(voucherOrder);
                     // 4.确认消息 XACK stream.orders g1 id
-                    stringRedisTemplate.opsForStream().acknowledge(queueName, "g1", record.getId());
+                    stringRedisTemplate.opsForStream().acknowledge(QUEUE_NAME, "g1", record.getId());
                 } catch (Exception e) {
                     log.error("处理订单异常", e);
                 }
             }
+        }
+    } */
+
+//    IVoucherOrderService proxy;
+    @Override
+    public Result seckillVoucher(Long voucherId) {
+        Long userId = UserHolder.getUser().getId();
+//        long orderId = redisIdWorker.nextId("order");
+        // 1.执行lua脚本
+        Long result = stringRedisTemplate.execute(
+                SECKILL_SCRIPT,
+                Collections.emptyList(),
+//                voucherId.toString(), userId.toString(), String.valueOf(orderId)
+                voucherId.toString(), userId.toString()
+        );
+        int r = result.intValue();
+        // 2.判断结果是否为0
+        if (r != 0) {
+            // 2.1.不为0 ，代表没有购买资格
+            return Result.fail(r == 1 ? "库存不足" : "不能重复下单");
+        }
+        // 2.2.为0 ，有购买资格，把下单信息保存到阻塞队列
+        VoucherOrder voucherOrder = new VoucherOrder();
+        // 2.3.订单id
+        long orderId = redisIdWorker.nextId("order");
+        voucherOrder.setId(orderId);
+        // 2.4.用户id
+        voucherOrder.setUserId(userId);
+        // 2.5.代金券id
+        voucherOrder.setVoucherId(voucherId);
+        // 放入消息队列
+        rabbitTemplate.convertAndSend(QUEUE_NAME, voucherOrder);
+        // 3.获取代理对象
+//        proxy = (IVoucherOrderService) AopContext.currentProxy();
+        // 4.返回订单id
+        return Result.ok(orderId);
+    }
+
+    @RabbitListener(queues = QUEUE_NAME)
+    public void listenSeckillQueue(VoucherOrder voucherOrder) {
+        if (voucherOrder != null) {
+            handleVoucherOrder(voucherOrder);
         }
     }
 
@@ -172,29 +221,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             // 释放锁
             lock.unlock();
         }
-    }
-
-    IVoucherOrderService proxy;
-    @Override
-    public Result seckillVoucher(Long voucherId) {
-        Long userId = UserHolder.getUser().getId();
-        long orderId = redisIdWorker.nextId("order");
-        // 1.执行lua脚本
-        Long result = stringRedisTemplate.execute(
-                SECKILL_SCRIPT,
-                Collections.emptyList(),
-                voucherId.toString(), userId.toString(), String.valueOf(orderId)
-        );
-        int r = result.intValue();
-        // 2.判断结果是否为0
-        if (r != 0) {
-            // 2.1.不为0 ，代表没有购买资格
-            return Result.fail(r == 1 ? "库存不足" : "不能重复下单");
-        }
-        // 3.获取代理对象
-        proxy = (IVoucherOrderService) AopContext.currentProxy();
-        // 4.返回订单id
-        return Result.ok(orderId);
     }
 
     @Transactional
@@ -221,7 +247,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             log.error("库存不足！");
             return;
         }
-
         // 7.创建订单
         save(voucherOrder);
     }
