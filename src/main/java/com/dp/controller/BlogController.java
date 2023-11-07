@@ -1,6 +1,5 @@
 package com.dp.controller;
 
-
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dp.dto.Result;
 import com.dp.dto.UserDTO;
@@ -9,17 +8,9 @@ import com.dp.service.IBlogService;
 import com.dp.utils.SystemConstants;
 import com.dp.utils.UserHolder;
 import org.springframework.web.bind.annotation.*;
-
 import javax.annotation.Resource;
 import java.util.List;
 
-/**
- * <p>
- * 前端控制器
- * </p>
- *
- * @author 虎哥
- */
 @RestController
 @RequestMapping("/blog")
 public class BlogController {
