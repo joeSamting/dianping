@@ -1,6 +1,5 @@
 package com.dp.controller;
 
-
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dp.dto.Result;
@@ -8,16 +7,9 @@ import com.dp.entity.Shop;
 import com.dp.service.IShopService;
 import com.dp.utils.SystemConstants;
 import org.springframework.web.bind.annotation.*;
-
 import javax.annotation.Resource;
 
-/**
- * <p>
- * 前端控制器
- * </p>
- *
- * @author 虎哥
- */
+
 @RestController
 @RequestMapping("/shop")
 public class ShopController {
