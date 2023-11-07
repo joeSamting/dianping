@@ -5,6 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+/**
+ * @Author Su
+ * @Description 运行时异常处理类
+ * @Date 2022/5/15 09:17
+ **/
 @Slf4j
 @RestControllerAdvice
 public class WebExceptionAdvice {
