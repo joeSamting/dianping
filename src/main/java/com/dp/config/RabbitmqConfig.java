@@ -6,9 +6,18 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+
+/**
+ * @Author Su
+ * @Description RabbitMQ配置信息
+ * @Date 2022/7/20 20:23
+ **/
 @Configuration
 public class RabbitmqConfig {
 
+    /**
+     * 绑定健
+     */
     private final String QUEUE_NAME = "rabbitmq.orders";
 
     @Bean
